@@ -1,0 +1,4 @@
+[submodule "foma"]
+	path = foma-orig
+	url = https://github.com/mhulden/foma.git
+	branch = master
