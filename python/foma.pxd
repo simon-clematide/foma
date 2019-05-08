@@ -49,3 +49,4 @@ cdef extern from "fomalib.h":
     void apply_med_set_align_symbol(apply_med_handle *medh, char *align)
     char *apply_med_get_instring(apply_med_handle *medh)
     char *apply_med_get_outstring(apply_med_handle *medh)
+    void apply_med_clear(apply_med_handle *medh)

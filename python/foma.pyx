@@ -1,4 +1,15 @@
-from libc.stdlib cimport free
+cdef extern from "Python.h":
+    char* PyUnicode_AsUTF8(object unicode)
+
+from libc.stdlib cimport free, malloc
+
+# https://stackoverflow.com/questions/17511309/fast-string-array-cython
+cdef char ** to_cstring_array(list_str):
+    cdef char **ret = <char **>malloc(len(list_str) * sizeof(char *))
+    for i in range(len(list_str)):
+        ret[i] = PyUnicode_AsUTF8(list_str[i])
+    return ret
+
 
 cdef bytes as_str(word):
     if isinstance(word, bytes):
@@ -56,7 +67,7 @@ cdef class FSM:
                 if result == NULL: break
                 yield unicode(result, 'utf8')
                 result = apply_up(applyh, NULL)
-        finally: 
+        finally:
             apply_clear(applyh)
 
     def apply_down(self, word):
@@ -68,7 +79,7 @@ cdef class FSM:
                 if result == NULL: break
                 yield unicode(result, 'utf8')
                 result = apply_down(applyh, NULL)
-        finally: 
+        finally:
             apply_clear(applyh)
 
     def med(self, word, int limit=4, int cutoff=15,
@@ -85,17 +96,103 @@ cdef class FSM:
         word = as_str(word)
         cdef char* result = apply_med(medh, word)
         cdef int cost
-        cdef char *instring, *outstring
+        cdef char *instring
+        cdef char *outstring
         try:
             while True:
-                if result == NULL: break
+                if result == NULL:
+                 #   apply_med_clear(medh)
+                    break
                 cost = apply_med_get_cost(medh)
                 instring = apply_med_get_instring(medh)
                 outstring = apply_med_get_outstring(medh)
                 yield MEDMatch(cost, instring, outstring)
                 result = apply_med(medh, NULL)
-        finally: 
-            free(medh)
+        finally:
+            apply_med_clear(medh)
+
+
+
+    def med_words(self, words, int limit=4, int cutoff=15,
+            int heap_max=4194305, align=None):
+        if not self.arity == 1:
+            raise NotImplementedError('miminum edit distance is only supported for FSAs')
+
+
+        cdef apply_med_handle* medh = apply_med_init(self.net)
+        apply_med_set_med_limit(medh, limit)
+        apply_med_set_med_cutoff(medh, cutoff)
+        apply_med_set_heap_max(medh, heap_max)
+        cdef char* result = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        cdef int cost
+        cdef unsigned int i
+        cdef char *instring
+        cdef char *outstring
+        cdef char **c_arr1 = to_cstring_array(words)
+        if align:
+            align = as_str(align)
+            apply_med_set_align_symbol(medh, align)
+        try:
+            for i in  range(len(words)):
+            #for word in to_cstring_array(words):
+                #c_arr1 = (word)
+                #word = as_str(word[0:-1])
+                #word = c_arr1[i]
+
+                result = apply_med(medh, c_arr1[i])
+                while True:
+                    if result == NULL:
+                        apply_med_clear(medh)
+                        break
+                    cost = apply_med_get_cost(medh)
+                    instring = apply_med_get_instring(medh)
+                    outstring = apply_med_get_outstring(medh)
+                    yield MEDMatch(cost, instring, outstring)
+                    result = apply_med(medh, NULL)
+        finally:
+            apply_med_clear(medh)
+    def med_file(self, filename, int limit=4, int cutoff=15,
+            int heap_max=4194305, align=None):
+        if not self.arity == 1:
+            raise NotImplementedError('miminum edit distance is only supported for FSAs')
+
+
+        cdef apply_med_handle* medh = apply_med_init(self.net)
+        apply_med_set_med_limit(medh, limit)
+        apply_med_set_med_cutoff(medh, cutoff)
+        apply_med_set_heap_max(medh, heap_max)
+        cdef char* result = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+        cdef int cost
+        cdef unsigned int i
+        cdef char *instring
+        cdef char *outstring
+
+        if align:
+            align = as_str(align)
+            apply_med_set_align_symbol(medh, align)
+        try:
+            with open(filename, 'rt', encoding="utf-8") as f:
+                for word in f:
+                    word = word.rstrip()
+                #for word in to_cstring_array(words):
+                    #c_arr1 = (word)
+                    word = as_str(word)
+                    #word = c_arr1[i]
+
+                    result = apply_med(medh, word)
+                    while True:
+                        if result == NULL:
+                            apply_med_clear(medh)
+                            break
+                        cost = apply_med_get_cost(medh)
+                        instring = apply_med_get_instring(medh)
+                        outstring = apply_med_get_outstring(medh)
+                        yield MEDMatch(cost, instring, outstring)
+                        result = apply_med(medh, NULL)
+        finally:
+            apply_med_clear(medh)
+
 
     property arity:
         def __get__(self):
@@ -112,7 +209,7 @@ cdef class FSM:
     property minimized:
         def __get__(self):
             return self.net.is_minimized
-    
+
     property statecount:
         def __get__(self):
             return self.net.statecount
